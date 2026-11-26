@@ -1,6 +1,7 @@
 export default {
   ignoreFiles: [
-    "HANDOFF.md",
+    "docs",
+    "docs/**",
     "package.json",
     "package-lock.json",
     "web-ext-config.mjs",

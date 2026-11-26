@@ -98,6 +98,8 @@ npm run sign    # AMO で署名（unlisted）して XPI を取得
 - unlisted は自動更新されません。新版は手動で入れ直します
 - 拡張 ID（`browser_specific_settings.gecko.id`）は署名後に変更できません。変えると別アドオン扱いになり、既存のインストールは引き継がれません
 
+設計判断の理由や実機で分かった落とし穴は [docs/development-notes.md](docs/development-notes.md) にまとめています。
+
 ## 構成
 
 | ファイル | 役割 |
@@ -107,6 +109,7 @@ npm run sign    # AMO で署名（unlisted）して XPI を取得
 | `content.js` | X の DOM 読み取り、投稿内ボタンの追加 |
 | `ui.html` / `ui.js` / `ui.css` | 確認ウィンドウ（プレビュー・編集・起動・画像コピー） |
 | `icons/` | アイコン |
+| `docs/development-notes.md` | 開発ノート（設計判断・検証結果・署名手順） |
 | `package.json` | `web-ext` の lint / build / sign スクリプト |
 | `web-ext-config.mjs` | パッケージに含めないファイルの指定 |
 | `LICENSE` | PolyForm Noncommercial 1.0.0 |

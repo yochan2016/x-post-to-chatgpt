@@ -1,6 +1,8 @@
-# HANDOFF — X Post to ChatGPT（Firefox 拡張）
+# 開発ノート — X Post to ChatGPT（Firefox 拡張）
 
 最終更新: 2026-11-26
+
+この文書は**開発者向けの記録**です。設計判断の理由、実機で分かった落とし穴、署名・配布の手順を残しています。利用者向けの説明は [README.md](../README.md) を参照してください。
 
 ## 1. 目的
 
@@ -47,7 +49,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 - 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
 - ライセンスは PolyForm Noncommercial 1.0.0。AMO unlisted はコード公開を要求せず、GitHub 公開と両立する
-- API キーは `HKCU\Environment` の `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET`（`setx`）に保存済み。**OpenCode や既存ターミナルは起動時の環境を持ち続ける**ので、古いセッションでは `[Environment]::GetEnvironmentVariable(...,'User')` で読み直す
+- API キーはユーザー環境変数 `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` に入れる（`setx` で永続化可）。**`setx` で登録した値は、すでに起動しているターミナルやエディタには反映されない**ので、シェルを開き直すか `[Environment]::GetEnvironmentVariable(...,'User')` で読み直してから `npm run sign` を実行する
 
 確認済みの動作:
 
@@ -62,21 +64,20 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 ## 4. ファイル構成
 
 ```
-F:\Projects\X_post_send_firefoxextension\
+（リポジトリのルート）
   manifest.json      MV3 / Firefox
-  background.js      メニュー、ウィンドウ生成、FOcus 監視、スナップショット
+  background.js      メニュー、ウィンドウ生成、スナップショット
   content.js         DOM 抽出、投稿内ボタン、コンテキスト対象の記憶
   ui.html            確認ウィンドウ
   ui.css
   ui.js              プレビュー、テンプレート、プロンプト生成、起動、画像コピー
-  icons/icon-48.png
-  icons/icon-96.png
-  README.md
-  HANDOFF.md         この文書（パッケージには含めない）
-  LICENSE           PolyForm Noncommercial 1.0.0（XPI に同梱）
+  icons/             icon-48 / icon-96
+  README.md          利用者向け
+  LICENSE            PolyForm Noncommercial 1.0.0（XPI に同梱）
+  docs/development-notes.md   この文書（パッケージには含めない）
   package.json       web-ext 10 の lint / build / sign
   web-ext-config.mjs パッケージ除外指定
-  .gitignore         node_modules / web-ext-artifacts / .env / *.xpi
+  .gitignore
 ```
 
 ### manifest の要点
@@ -96,7 +97,7 @@ F:\Projects\X_post_send_firefoxextension\
 [content.js]
   投稿内ボタン click / contextmenu
     → serialize(article)（「さらに表示」を展開してから抽出）
-    → background へ postMessage
+    → background へ runtime.sendMessage
          { type: "open", data, pos: {x,y} }   … ボタン
          （contextmenu は lastContextArticle を記憶するだけ）
 
@@ -242,7 +243,7 @@ npm run sign                # AMO で署名 → web-ext-artifacts/*.xpi
 - 出力ファイル名は AMO が決める（`<hash>-<version>.xpi`）。配布時に改名してよい
 - 0.1.0 は `Waiting for validation` → `Waiting for approval` → 数十秒で自動承認。人手レビューに入る場合は数日かかることがある
 - `--no-input` を付けているので、対話待ちで止まることはない
-- `npm run build` の ZIP 内容は manifest / JS / CSS / HTML / icons / README / LICENSE のみ（HANDOFF.md・package.json は `web-ext-config.mjs` で除外）
+- `npm run build` の ZIP 内容は manifest / JS / CSS / HTML / icons / README / LICENSE のみ（`docs/` と `package.json` は `web-ext-config.mjs` で除外）
 
 ### インストール（常設）
 
@@ -301,10 +302,10 @@ node --check ui.js
 - 公開時に自己配布の自動更新を有効化するか判断（`gecko.update_url` を GitHub の JSON に向ける）
 - 画像 fetch を設定でオフにできるようにする
 
-## 10. 作業上の注意（重要）
+## 10. 実機検証時の注意（重要）
 
 - **画面を操作する前には必ず「これから画面を操作します」と宣言し、ユーザーの引き渡しを待つ。**
-  無断でキー入力・クリックを送ると、ユーザーの別アプリ（OpenCode 等）に入力が流れる。
+  無断でキー入力・クリックを送ると、他のアプリに入力が流れる。
 - `SendKeys` を使う前に `GetForegroundWindow()` が対象ウィンドウと一致することを確認する。
   一致しなければ送らない。
 - 可能なら GUI 操作を避け、ヘッドレス（Marionette / WebDriver）で検証する。
