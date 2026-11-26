@@ -35,23 +35,24 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
   - 本文 3,620 文字 / URL 32,531 → OK
   - 本文 4,070 文字 / URL 36,581 → **起動失敗**（Windows コマンドライン上限）
   - 安全域は URL 30,000 文字以下（日本語本文 約 3,300 文字）
-- 画像はディープリンクで渡せない。**クリップボード経由の貼り付け**は可
+- 画像データはディープリンクで渡せない。**本文に URL を載せれば ChatGPT 側が取得できる**（2026-11-26 実機確認）。クリップボード経由の添付も可
 - `moz-extension://` から `codex://` 起動可。初回のみ許可ダイアログ（「常に許可」可）
 
 ## 3. 現在の状態
 
-**実装・実機確認済み。** 追加機能の要望は現時点でなし。
+**実装・実機確認済み（0.2.3）。**
 
-**配布（2026-11-26 公開済み）:** GitHub Releases で 0.2.1 を配布中。AMO unlisted（自己配布）で署名し、`update_url` で自動更新する。
+**配布（2026-11-26 公開済み）:** GitHub Releases で配布中（最新 0.2.3）。AMO unlisted（自己配布）で署名し、`update_url` で自動更新する。
 
 - リポジトリ: https://github.com/yochan2016/x-post-to-chatgpt
 - 配信: GitHub Pages（ブランチ `main` / フォルダ `/docs`）の `updates.json`
-- リリース: `v0.2.1`（アセット名 `x-post-to-chatgpt-0.2.1.xpi`、`Content-Type: application/x-xpinstall` で配信されることを確認）
+- リリース: `v0.2.3`（アセット名 `x-post-to-chatgpt-0.2.3.xpi`、`Content-Type: application/x-xpinstall` で配信されることを確認）
 
 - 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）。実機確認済み
 - 0.2.0: 公開前レビューの P0 を反映。データ申告を `websiteContent` に、投稿データの受け渡しをウィンドウ単位のトークンに、リプライ抽出を会話タイムライン内に限定
 - 0.2.1: `gecko.update_url` を追加（自己配布の自動更新）。`npm run lint` は `--self-hosted` 付きに変更。`docs/updates.json` を GitHub Pages で配信する
 - 0.2.2: 長文処理の堅牢化（サロゲートを割らない切詰め、「（以下略）」込みの長さ判定、引用も省略対象に）、プレースホルダー置換を1回のコールバックに、プライベートウィンドウ非対応（`incognito: not_allowed`）
+- 0.2.3: 画像を URL としてプロンプトの `【添付画像】` に載せる（ChatGPT 側が取得）。省略理由を積み上げ表示。保存済みテンプレートに `{images}` が無い場合は注意書きを出す。実機確認済み（2026-11-26）
 
 **0.2.1 実機確認済み（2026-11-26）**: 自動クローズ／同一ページから続けて2つ開いたときの取り違え防止／リプライ欄への無関係な投稿の混入なし、をすべて確認。
 
@@ -188,21 +189,27 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 【表示中のリプライ】
 {replies}
+
+【添付画像】
+{images}
 ```
 
-- 引用・リプライが空なら該当セクションごと削除
+- 引用・リプライ・画像が空なら該当セクションごと削除
 - 連続改行を最大2つに圧縮、行末空白を除去（先頭の空行は保持）
 - 置換は `{author}` などのプレースホルダーだけを**1回のコールバックで**行う。本文に `$&`・`` $` ``・`{quoted}` が含まれても化けない（v0.2.2〜）
-- 長すぎる場合: リプライ削除 → 引用削除 → 本文を85%ずつ切り詰め（**コードポイント単位**でサロゲートを割らない）＋「（以下略）」
+- 長すぎる場合: リプライ削除 → 引用削除 → 本文を85%ずつ切り詰め（**コードポイント単位**でサロゲートを割らない）＋「（以下略）」→ それでも収まらなければ画像リンク削除
+- 省略した内容は `長いため、表示中のリプライ・本文を省略しました。` のように積み上げて表示する（v0.2.3〜）
 - 長さ判定は「（以下略）」を足した**最終形**の `encodedLength` で行う
 - 起動時は `url.length > 31000` をブロック
+- 画像リンクは 1 枚あたり約 80 文字なので、残すために本文が削られる量は日本語で 10 文字程度。画像を優先して残す
 
-### 画像コピー
+### 画像
 
-- `fetch(pbs.twimg.com)` → `createImageBitmap` → canvas → `toBlob("image/png")`
-- `navigator.clipboard.write([new ClipboardItem({"image/png": blob})])`
-- ボタンクリックのユーザー操作内なので `clipboardWrite` 権限なしで動作（検証済み）
-- 1枚ずつ。ChatGPT 側で `Ctrl+V`
+- **リンク方式（既定）:** `pbs.twimg.com` の URL を `【添付画像】` に列挙する。ChatGPT 側が取得して読む（2026-11-26 実機確認: Chat モードで取得できた）
+- `pbs.twimg.com` は認証不要・`access-control-allow-origin: *`・`content-type: image/png` で返る（`name=medium` は約 160KB）
+- **コピー方式（併用可）:** `fetch(pbs.twimg.com)` → `createImageBitmap` → canvas → `toBlob("image/png")` → `navigator.clipboard.write([new ClipboardItem({"image/png": blob})])`。ボタンクリックのユーザー操作内なので `clipboardWrite` 権限なしで動作（検証済み）。1枚ずつ
+- 保存済みテンプレートに `{images}` が無い場合は画像リンクが付かないため、確認ウィンドウに注意書きを出す（v0.2.3〜）
+- タイムラインでは `name=small`（680px）が配信されるため、プロンプトに載せるときだけ `name=large` に置き換える。実測: 元画像が 998x685 の投稿では `large` / `orig` / `4096x4096` がすべて同一バイト、`small` は 680x467。拡大はされず、縮小版を避けるだけ
 
 ### 自動クローズ
 
@@ -274,13 +281,22 @@ npm run sign                # AMO で署名 → web-ext-artifacts/*.xpi
 
 **旧 ID（`@local`）の一時アドオンが読み込まれたままだと別アドオンとして並ぶ**ので、`about:debugging` で先に削除する。
 
-### 一時アドオン（開発時）
+### 開発時の動作確認（署名・パッケージ不要）
 
-1. `about:debugging#/runtime/this-firefox`
-2. 「一時的なアドオンを読み込む…」
-3. `manifest.json`
+通常の修正は**ソースフォルダをそのまま読み込む**。`npm run sign` と XPI 作成が必要なのは、常設インストールするときだけ。
 
-**署名済み XPI を入れたプロファイルでは、同じ ID のため一時アドオンとして読み込めない**（`already installed`）。開発は別プロファイルで行う。
+```
+npx web-ext run --firefox-profile "C:\path\to\dev-profile" --start-url https://x.com/home
+```
+
+1. `about:profiles` で開発用プロファイルを1つ作り、一度 X にログインしておく
+2. 以後は上記コマンドだけ。`manifest.json` を読んで署名なしで起動し、ファイル保存で自動リロード（`--no-reload` で無効化）
+
+- プロファイルを指定しないと毎回まっさらな一時プロファイルになり、X のログインが毎回必要になる
+- 手動で読み込む場合: `about:debugging#/runtime/this-firefox` →「一時的なアドオンを読み込む…」→ `manifest.json`（フォルダ内の任意のファイルでよい）
+- 一時アドオンは Firefox 終了で消える
+- **署名済み XPI を入れたプロファイルでは、同じ ID のため一時アドオンとして読み込めない**（`already installed`）。開発は別プロファイルで行う
+- 既存タブは F5（コンテンツスクリプトは再読み込みされない）
 
 ### ライセンス
 
@@ -299,8 +315,8 @@ npm run sign                # AMO で署名 → web-ext-artifacts/*.xpi
 
 ### コード更新時
 
-- 常用（署名済み）: `version` を上げる → `npm run sign` → 新しい XPI を `about:addons` から入れ直す
-- 開発（一時アドオン）: `about:debugging` の「再読み込み」
+- 開発中: `web-ext run`（自動リロード）または `about:debugging` の「再読み込み」。XPI は作らない
+- 配布時: `version` を上げる → `npm run lint` → `npm run sign` → XPI を GitHub Release に `x-post-to-chatgpt-<version>.xpi` で添付 → `docs/updates.json` を更新
 - **既存タブは F5**（コンテンツスクリプトは再読み込みされない）
 
 ### 構文チェック
@@ -326,6 +342,7 @@ node --check ui.js
 - 長文＋絵文字（サロゲート境界で切られる入力）で例外が出ないこと
 - 本文に `$&` / `` $` `` / `$'` / `{quoted}` を入れても改変されないこと
 - 長い引用が省略され、最終的な `encodedLength` が 30,000 以下に収まること
+- 画像あり／なしで `【添付画像】` が入る／消えること、長文でも画像リンクが最後まで残ること（v0.2.3）
 
 ## 9. 次の作業候補
 
@@ -333,10 +350,10 @@ node --check ui.js
 - 「確認ウィンドウのタイトル接頭辞」の原因調査
 - X の DOM 変更に対するフォールバック（セレクタ複数化）
 - 引用ポストの画像・投稿者・URL の取得精度向上
-- 複数画像の渡し方（1枚ずつコピーの UX 改善）
+- 画像リンクは URL 方式で複数枚そのまま渡る。クリップボード側（1枚ずつ）の UX 改善は優先度を下げた
 - GitHub 公開（PolyForm Noncommercial、`LICENSE` と README は整備済み）
 - 公開時に自己配布の自動更新を有効化するか判断（`gecko.update_url` を GitHub の JSON に向ける）
-- 画像 fetch を設定でオフにできるようにする
+- 画像リンクを載せない設定（現状はテンプレートから `【添付画像】` を消す運用）
 
 ## 10. 実機検証時の注意（重要）
 

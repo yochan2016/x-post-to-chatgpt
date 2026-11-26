@@ -3,8 +3,8 @@
     "x-post-to-chatgpt@yodaki.net": {
       "updates": [
         {
-          "version": "0.2.2",
-          "update_link": "https://github.com/yochan2016/x-post-to-chatgpt/releases/download/v0.2.2/x-post-to-chatgpt-0.2.2.xpi"
+          "version": "0.2.3",
+          "update_link": "https://github.com/yochan2016/x-post-to-chatgpt/releases/download/v0.2.3/x-post-to-chatgpt-0.2.3.xpi"
         }
       ]
     }

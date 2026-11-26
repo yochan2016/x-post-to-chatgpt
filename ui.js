@@ -11,7 +11,10 @@ const DEFAULT_TEMPLATE = `
 {quoted}
 
 【表示中のリプライ】
-{replies}`;
+{replies}
+
+【添付画像】
+{images}`;
 
 const MAX_URL_LENGTH = 30000;
 
@@ -46,13 +49,16 @@ function setStatus(message, isError = false) {
 
 // 本文のプレースホルダーだけを一度で置換する。
 // 投稿本文に $& や {quoted} が含まれても、置換構文や二重置換の影響を受けない。
-const PLACEHOLDER_RE = /\{(author|datetime|url|text|quoted|replies)\}/g;
+const PLACEHOLDER_RE = /\{(author|datetime|url|text|quoted|replies|images)\}/g;
 
 function buildPrompt(data, tpl) {
   let text = tpl;
   if (!data.quoted) text = text.replace(/【引用ポスト】\s*\{quoted\}/, "");
   if (!data.replies || data.replies.length === 0) {
     text = text.replace(/【表示中のリプライ】\s*\{replies\}/, "");
+  }
+  if (!data.images || data.images.length === 0) {
+    text = text.replace(/【添付画像】\s*\{images\}/, "");
   }
   const replies = (data.replies || [])
     .map((reply) => `- ${reply.author} ${reply.handle}\n${reply.text}`)
@@ -64,6 +70,7 @@ function buildPrompt(data, tpl) {
     text: data.text || "",
     quoted: data.quoted || "",
     replies,
+    images: (data.images || []).join("\n"),
   };
   return text
     .replace(PLACEHOLDER_RE, (match, key) => values[key] ?? match)
@@ -87,51 +94,88 @@ function truncateAtCodePoint(text, max) {
 
 const ELLIPSIS = "\n（以下略）";
 
+function omissionNote(dropped) {
+  return dropped.length > 0 ? `長いため、${dropped.join("・")}を省略しました。` : "";
+}
+
 function fitPrompt(data, tpl) {
+  const dropped = [];
   let prompt = buildPrompt(data, tpl);
   if (encodedLength(prompt) <= MAX_URL_LENGTH) {
     return { prompt, note: "" };
   }
 
   let current = { ...data, replies: [] };
-  let note = "長いため、表示中のリプライを省略しました。";
+  dropped.push("表示中のリプライ");
   prompt = buildPrompt(current, tpl);
   if (encodedLength(prompt) <= MAX_URL_LENGTH) {
-    return { prompt, note };
+    return { prompt, note: omissionNote(dropped) };
   }
 
   if (current.quoted) {
     current = { ...current, quoted: "" };
-    note = "長いため、リプライと引用ポストを省略しました。";
+    dropped.push("引用ポスト");
     prompt = buildPrompt(current, tpl);
     if (encodedLength(prompt) <= MAX_URL_LENGTH) {
-      return { prompt, note };
+      return { prompt, note: omissionNote(dropped) };
     }
   }
 
   // 「（以下略）」を含めた最終形で上限を測る
-  let body = current.text || "";
+  const originalText = current.text || "";
+  let body = originalText;
   while (body.length > 100) {
     const candidate = buildPrompt({ ...current, text: `${body}${ELLIPSIS}` }, tpl);
     if (encodedLength(candidate) <= MAX_URL_LENGTH) break;
     body = truncateAtCodePoint(body, Math.floor(body.length * 0.85));
   }
-  prompt = buildPrompt({ ...current, text: `${body}${ELLIPSIS}` }, tpl);
-  if (encodedLength(prompt) > MAX_URL_LENGTH) {
-    return { prompt, note: "テンプレートが長すぎて上限に収まりません。プロンプトを短くしてください。" };
+  current = { ...current, text: `${body}${ELLIPSIS}` };
+  if (body.length < originalText.length) dropped.push("本文");
+  prompt = buildPrompt(current, tpl);
+  if (encodedLength(prompt) <= MAX_URL_LENGTH) {
+    return { prompt, note: omissionNote(dropped) };
   }
-  return { prompt, note: "長いため、本文を省略しました。" };
+
+  // 本文を削っても収まらない場合の最後の手段として画像リンクを落とす
+  if (current.images && current.images.length > 0) {
+    current = { ...current, images: [] };
+    dropped.push("添付画像");
+    prompt = buildPrompt(current, tpl);
+    if (encodedLength(prompt) <= MAX_URL_LENGTH) {
+      return { prompt, note: omissionNote(dropped) };
+    }
+  }
+
+  return { prompt, note: "テンプレートが長すぎて上限に収まりません。プロンプトを短くしてください。" };
+}
+
+// X はタイムラインで縮小版（name=small / 680px）を配信する。
+// 画像内の文字まで読ませたいので、プロンプトには拡大版（元画像が小さければ同じ）を載せる。
+function imageUrlForPrompt(src) {
+  try {
+    const url = new URL(src);
+    if (url.hostname !== "pbs.twimg.com") return src;
+    url.searchParams.set("name", "large");
+    return url.toString();
+  } catch {
+    return src;
+  }
 }
 
 function refreshPrompt() {
   if (!snapshot) return;
-  const { prompt, note } = fitPrompt(snapshot, template);
+  const data = { ...snapshot, images: (snapshot.images || []).map(imageUrlForPrompt) };
+  const { prompt, note } = fitPrompt(data, template);
   els.prompt.value = prompt;
   const notes = [];
   if (snapshot.truncated) {
     notes.push("本文が省略されています。X側で「さらに表示」を開いてから再実行してください。");
   }
   if (note) notes.push(note);
+  // テンプレートを編集済みの環境では {images} が無く、画像リンクが付かない
+  if (snapshot.images?.length && !template.includes("{images}")) {
+    notes.push("テンプレートに {images} が無いため、画像リンクは含まれていません。");
+  }
   els.note.textContent = notes.join(" ");
 }
 
