@@ -232,7 +232,7 @@ async function launch() {
 }
 
 async function init() {
-  const tabId = Number(new URLSearchParams(location.search).get("tabId"));
+  const token = new URLSearchParams(location.search).get("token");
   const stored = await browser.storage.local.get("template");
   if (stored.template) template = stored.template;
   els.template.value = template;
@@ -251,21 +251,21 @@ async function init() {
     browser.runtime.sendMessage({ type: "closeWindow" }).catch(() => window.close());
   });
 
-  if (!Number.isFinite(tabId)) {
-    showError("対象のタブを特定できませんでした。");
+  if (!token) {
+    showError("対象の投稿を特定できませんでした。投稿のボタンから開き直してください。");
     return;
   }
 
   let response = null;
   try {
-    response = await browser.runtime.sendMessage({ type: "resolve", tabId });
+    response = await browser.runtime.sendMessage({ type: "resolve", token });
   } catch (error) {
     showError(`投稿を取得できませんでした: ${error.message}`);
     return;
   }
   snapshot = response?.data ?? null;
   if (!snapshot) {
-    showError("このページから投稿を取得できませんでした。Xの投稿ページで開き直してください。");
+    showError("投稿を読み取れませんでした。このウィンドウを閉じて、もう一度開いてください。");
     return;
   }
 

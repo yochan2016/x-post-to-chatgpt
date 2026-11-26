@@ -45,6 +45,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 **配布（2026-11-26 署名済み）:** AMO unlisted（自己配布）で 0.1.0 → 0.1.1 を署名。`npm run sign` で取得した XPI を `about:addons` から常設インストールする。
 
 - 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）。実機確認済み
+- 0.2.0: 公開前レビューの P0 を反映。データ申告を `websiteContent` に、投稿データの受け渡しをウィンドウ単位のトークンに、リプライ抽出を会話タイムライン内に限定
 - 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/<hash>-<version>.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
 - 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
@@ -84,7 +85,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 - `browser_specific_settings.gecko.id`: `x-post-to-chatgpt@yodaki.net`（**署名後に変更不可**）
 - `strict_min_version`: `140.0`（`data_collection_permissions` の組み込み同意 UI が 140 以降）
-- `data_collection_permissions.required`: `["none"]`（2025-11-03 以降 AMO 新規提出で必須）
+- `data_collection_permissions.required`: `["websiteContent"]`（2025-11-03 以降 AMO 新規提出で必須。Mozilla の定義では「アドオンまたはローカルのブラウザの外で扱われるデータ」が送信に当たるため、`none` ではなくウェブサイトの内容として申告する）
 - `permissions`: `menus`, `storage`
 - `host_permissions`: `https://x.com/*`, `https://twitter.com/*`, `https://pbs.twimg.com/*`
 - `background.scripts`: `background.js`（Firefox の MV3 イベントページ）
@@ -102,12 +103,12 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
          （contextmenu は lastContextArticle を記憶するだけ）
 
 [background.js]
-  open → storage.session に保存 → windows.create(ui.html?tabId=...)
-  menus.onClicked → getContextPost → 無ければ getCenterPost → 保存 → ウィンドウ
-  action.onClicked → getCenterPost → 保存 → ウィンドウ
+  open → prune → トークン発行 → storage.session に保存 → windows.create(ui.html?token=...)
+  menus.onClicked → getContextPost → 無ければ getCenterPost → ウィンドウ
+  action.onClicked → getCenterPost → ウィンドウ
 
 [ui.js]
-  resolve(tabId) → background が storage か content から取得
+  resolve(token) → background が storage から取り出して**削除**して返す
   プレビュー表示 → プロンプト生成
   「ChatGPTで開く」→ windows.onFocusChanged を自前で監視 → location.href = codex://new?prompt=...
 ```
@@ -119,14 +120,14 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 | content → bg | `open` | 投稿データ＋クリック座標 |
 | bg → content | `getCenterPost` | 画面中央付近の投稿を展開・抽出 |
 | bg → content | `getContextPost` | 最後に右クリックした投稿を展開・抽出 |
-| ui → bg | `resolve` | tabId の投稿データを取得 |
+| ui → bg | `resolve` | token の投稿データを取り出して返す（読み取り後に削除） |
 | ui → bg | `closeWindow` | 自ウィンドウを削除 |
 
 ### storage
 
 | キー | 内容 |
 |---|---|
-| `storage.session["snap:<tabId>"]` | 抽出済み投稿データ |
+| `storage.session["snap:<token>"]` | 抽出済み投稿データ（`{at, data}`）。UI が読むと削除、1時間で自動失効 |
 | `storage.local["template"]` | ユーザー編集したテンプレート |
 
 ## 6. 実装の要点
@@ -227,6 +228,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 8. **拡張 ID は署名後に変更不可**。変えると別アドオン扱いになり、既存インストールは引き継がれない
 9. **テンプレートの保存**。UI で編集すると `storage.local` に保存され、既定テンプレートを上書きする
 10. **画像取得は pbs.twimg.com への fetch**。厳密に「追加リクエストゼロ」にしたい場合は無効化を検討
+11. **リプライ抽出は DOM 構造に依存**。`section[aria-label="Timeline: Conversation"]` と見出し／`placementTracking` を境界の手がかりにしている。X 側の変更で境界を誤ると、リプライが欠けるか、逆に余分な投稿が混ざる可能性がある
 
 ## 8. 配布・署名・確認方法
 

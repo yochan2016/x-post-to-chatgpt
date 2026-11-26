@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
   "name": "X Post to ChatGPT",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "表示中のX投稿をChatGPTデスクトップの新規チャットへ渡します。",
   "browser_specific_settings": {
     "gecko": {
       "id": "x-post-to-chatgpt@yodaki.net",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": ["websiteContent"]
       }
     }
   },

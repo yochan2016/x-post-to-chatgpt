@@ -1,5 +1,6 @@
 const MENU_ID = "xpost-to-chatgpt";
 const SNAP_PREFIX = "snap:";
+const SNAP_TTL_MS = 60 * 60 * 1000;
 const UI_WIDTH = 480;
 const UI_HEIGHT = 700;
 
@@ -16,22 +17,28 @@ async function setupMenus() {
 browser.runtime.onInstalled.addListener(setupMenus);
 browser.runtime.onStartup.addListener(setupMenus);
 
-function snapshotKey(tabId) {
-  return SNAP_PREFIX + tabId;
+// 投稿データはウィンドウごとのトークンで受け渡す。同じタブから続けて開いても取り違えない。
+async function pruneSnapshots() {
+  const all = await browser.storage.session.get(null);
+  const now = Date.now();
+  const stale = Object.entries(all)
+    .filter(([key, value]) => key.startsWith(SNAP_PREFIX) && now - (value?.at ?? 0) > SNAP_TTL_MS)
+    .map(([key]) => key);
+  if (stale.length > 0) await browser.storage.session.remove(stale);
 }
 
-async function saveSnapshot(tabId, data) {
-  await browser.storage.session.set({ [snapshotKey(tabId)]: data });
-}
-
-async function loadSnapshot(tabId) {
-  const key = snapshotKey(tabId);
+async function takeSnapshot(token) {
+  const key = SNAP_PREFIX + token;
   const stored = await browser.storage.session.get(key);
-  return stored[key] ?? null;
+  await browser.storage.session.remove(key);
+  return stored[key]?.data ?? null;
 }
 
-async function openUi(tabId, pos) {
-  const url = browser.runtime.getURL(`ui.html?tabId=${tabId}`);
+async function openUi(data, pos) {
+  await pruneSnapshots();
+  const token = crypto.randomUUID();
+  await browser.storage.session.set({ [SNAP_PREFIX + token]: { at: Date.now(), data } });
+  const url = browser.runtime.getURL(`ui.html?token=${token}`);
   const base = { url, type: "popup", width: UI_WIDTH, height: UI_HEIGHT };
   const options = pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)
     ? { ...base, left: Math.round(pos.x - UI_WIDTH / 2), top: Math.round(pos.y - 40) }
@@ -51,40 +58,27 @@ async function requestPost(tabId, type) {
   }
 }
 
-async function resolveSnapshot(tabId) {
-  const stored = await loadSnapshot(tabId);
-  if (stored) return stored;
-  const data = await requestPost(tabId, "getCenterPost");
-  if (data) await saveSnapshot(tabId, data);
-  return data;
-}
-
 browser.menus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== MENU_ID || !tab?.id) return;
   const data = (await requestPost(tab.id, "getContextPost"))
     || (await requestPost(tab.id, "getCenterPost"));
   if (!data) return;
-  await saveSnapshot(tab.id, data);
-  await openUi(tab.id);
+  await openUi(data);
 });
 
 browser.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
   const data = await requestPost(tab.id, "getCenterPost");
   if (!data) return;
-  await saveSnapshot(tab.id, data);
-  await openUi(tab.id);
+  await openUi(data);
 });
 
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === "open" && sender.tab?.id != null) {
-    const tabId = sender.tab.id;
-    return saveSnapshot(tabId, msg.data)
-      .then(() => openUi(tabId, msg.pos))
-      .then(() => ({ ok: true }));
+    return openUi(msg.data, msg.pos).then(() => ({ ok: true }));
   }
   if (msg?.type === "resolve") {
-    return resolveSnapshot(msg.tabId).then((data) => ({ data }));
+    return takeSnapshot(msg.token).then((data) => ({ data }));
   }
   if (msg?.type === "closeWindow" && sender.tab?.windowId != null) {
     return browser.windows.remove(sender.tab.windowId)

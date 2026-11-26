@@ -21,15 +21,24 @@
 
   function collectReplies(article) {
     if (!/\/status\/\d+/.test(location.pathname)) return [];
-    const all = [...document.querySelectorAll('article[data-testid="tweet"]')];
+    // 会話タイムラインの中だけを見る（無ければページ全体にフォールバック）
+    const scope = article.closest('section[aria-label="Timeline: Conversation"]') || document;
+    const all = [...scope.querySelectorAll('article[data-testid="tweet"]')];
     const index = all.indexOf(article);
     if (index < 0) return [];
-    return all.slice(index + 1, index + 1 + MAX_REPLIES).map((reply) => {
+
+    const replies = [];
+    for (const reply of all.slice(index + 1)) {
+      // おすすめ・見出し付きの区切りに達したら、そこで会話は終わり
+      const cell = reply.closest('div[data-testid="cellInnerDiv"]');
+      if (cell && cell.querySelector('h2, [data-testid="placementTracking"]')) break;
       const textEl = reply.querySelector('[data-testid="tweetText"]');
-      if (!textEl) return null;
+      if (!textEl) continue; // 画像だけの投稿は枠を消費しない
       const { author, handle } = nameParts(reply);
-      return { author, handle, text: textOf(textEl) };
-    }).filter(Boolean);
+      replies.push({ author, handle, text: textOf(textEl) });
+      if (replies.length >= MAX_REPLIES) break;
+    }
+    return replies;
   }
 
   function findShowMore(article) {
