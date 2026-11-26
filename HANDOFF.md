@@ -1,0 +1,302 @@
+# HANDOFF — X Post to ChatGPT（Firefox 拡張）
+
+最終更新: 2026-11-26
+
+## 1. 目的
+
+Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**新規チャット**へ渡す。
+
+- X への追加 API 呼び出し・自動巡回・自動スクロールはしない
+- 表示済み DOM のみを読む（「さらに表示」は展開する）
+- 自動送信はしない。ChatGPT 側で内容を確認してユーザーが送信する
+- 可能な限り拡張単体で完結（Native Messaging 不使用）
+
+## 2. 環境（検証済み）
+
+| 項目 | 値 |
+|---|---|
+| OS | Windows |
+| Firefox | 160.0.1（通常版・署名必須） |
+| ChatGPT デスクトップ | `OpenAI.Codex 26.1120.6357.0`（`ChatGPT.exe`） |
+| プロトコル | `codex`（MSIX `uap3:Protocol Name="codex" Parameters="--single-argument %1"`） |
+| 検証プロファイル | 一時プロファイル＋実プロファイルの両方で確認済み |
+| Node.js / web-ext | 24.22.1 / 10.8（`npm run sign` 用） |
+
+### ディープリンクの確定仕様
+
+- `codex://new?prompt=<URLエンコード>` で **Chat モードの新規チャットにプリフィル（未送信）**
+- `codex://threads/new?prompt=...` も同等
+- クエリは `prompt` のみ許可。生の `#` は拒否されるため必ずエンコード
+- **モードは継承**する。Chat タブなら Chat、Work タブなら Work の新規タスクになる。URL で強制不可
+- URL 長の実測:
+  - 本文 1,518 文字 / URL 13,645 → OK
+  - 本文 3,620 文字 / URL 32,531 → OK
+  - 本文 4,070 文字 / URL 36,581 → **起動失敗**（Windows コマンドライン上限）
+  - 安全域は URL 30,000 文字以下（日本語本文 約 3,300 文字）
+- 画像はディープリンクで渡せない。**クリップボード経由の貼り付け**は可
+- `moz-extension://` から `codex://` 起動可。初回のみ許可ダイアログ（「常に許可」可）
+
+## 3. 現在の状態
+
+**実装・実機確認済み。** 追加機能の要望は現時点でなし。
+
+**配布（2026-11-26 準備済み・未署名）:** AMO unlisted（自己配布）署名へ移行。`npm run sign` で署名済み XPI を取得し、`about:addons` から常設インストールする。AMO の API キー取得と初回 `sign` だけが残作業。
+
+- 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（ID はメールアドレス形式が慣例。まだ未署名なので変更は自由、署名後は不可）
+- `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
+- ライセンスは PolyForm Noncommercial 1.0.0。AMO unlisted はコード公開を要求せず、GitHub 公開と両立する
+
+確認済みの動作:
+
+- 投稿内ボタン（吹き出しアイコン）→ 確認ウィンドウ → ChatGPT へプリフィル
+- 右クリック「この投稿を ChatGPT へ」
+- 「さらに表示」の自動展開と全文取得
+- 長文時のリプライ省略・本文切り詰め
+- 画像の PNG クリップボードコピー
+- 「ChatGPTで開く」後、ChatGPT が前面に出たら確認ウィンドウを自動削除
+- テンプレート（空行 + `---` + 各セクション）
+
+## 4. ファイル構成
+
+```
+F:\Projects\X_post_send_firefoxextension\
+  manifest.json      MV3 / Firefox
+  background.js      メニュー、ウィンドウ生成、FOcus 監視、スナップショット
+  content.js         DOM 抽出、投稿内ボタン、コンテキスト対象の記憶
+  ui.html            確認ウィンドウ
+  ui.css
+  ui.js              プレビュー、テンプレート、プロンプト生成、起動、画像コピー
+  icons/icon-48.png
+  icons/icon-96.png
+  README.md
+  HANDOFF.md         この文書（パッケージには含めない）
+  LICENSE           PolyForm Noncommercial 1.0.0（XPI に同梱）
+  package.json       web-ext 10 の lint / build / sign
+  web-ext-config.mjs パッケージ除外指定
+  .gitignore         node_modules / web-ext-artifacts / .env / *.xpi
+```
+
+### manifest の要点
+
+- `browser_specific_settings.gecko.id`: `x-post-to-chatgpt@yodaki.net`（**署名後に変更不可**）
+- `strict_min_version`: `140.0`（`data_collection_permissions` の組み込み同意 UI が 140 以降）
+- `data_collection_permissions.required`: `["none"]`（2025-11-03 以降 AMO 新規提出で必須）
+- `permissions`: `menus`, `storage`
+- `host_permissions`: `https://x.com/*`, `https://twitter.com/*`, `https://pbs.twimg.com/*`
+- `background.scripts`: `background.js`（Firefox の MV3 イベントページ）
+- `action` に `default_popup` は**なし**（クリックで中央の投稿を開く）
+- `content_scripts`: x.com / twitter.com、`document_idle`
+
+## 5. データフロー
+
+```
+[content.js]
+  投稿内ボタン click / contextmenu
+    → serialize(article)（「さらに表示」を展開してから抽出）
+    → background へ postMessage
+         { type: "open", data, pos: {x,y} }   … ボタン
+         （contextmenu は lastContextArticle を記憶するだけ）
+
+[background.js]
+  open → storage.session に保存 → windows.create(ui.html?tabId=...)
+  menus.onClicked → getContextPost → 無ければ getCenterPost → 保存 → ウィンドウ
+  action.onClicked → getCenterPost → 保存 → ウィンドウ
+
+[ui.js]
+  resolve(tabId) → background が storage か content から取得
+  プレビュー表示 → プロンプト生成
+  「ChatGPTで開く」→ closeOnBlur 登録 → location.href = codex://new?prompt=...
+```
+
+### メッセージ
+
+| 送信元 | type | 内容 |
+|---|---|---|
+| content → bg | `open` | 投稿データ＋クリック座標 |
+| bg → content | `getCenterPost` | 画面中央付近の投稿を展開・抽出 |
+| bg → content | `getContextPost` | 最後に右クリックした投稿を展開・抽出 |
+| ui → bg | `resolve` | tabId の投稿データを取得 |
+| ui → bg | `closeWindow` | 自ウィンドウを削除 |
+| ui → bg | `closeOnBlur` | Firefox がフォーカスを失ったら閉じる予約 |
+
+### storage
+
+| キー | 内容 |
+|---|---|
+| `storage.session["snap:<tabId>"]` | 抽出済み投稿データ |
+| `storage.session["closeOnBlur:<windowId>"]` | 自動クローズ予約（時刻） |
+| `storage.local["template"]` | ユーザー編集したテンプレート |
+
+## 6. 実装の要点
+
+### 投稿内ボタン
+
+- `article[data-testid="tweet"]` ごとに、`[data-testid="reply"]` を含む `div[role="group"]` を探して末尾に追加
+- 34px の円形、`data-xpc-btn` で重複防止
+- MutationObserver（250ms スロットル）で再追加
+- アイコンは吹き出し SVG。ホバーで青
+
+### 抽出
+
+| 項目 | セレクタ |
+|---|---|
+| 本文 | `[data-testid="tweetText"]` の `innerText` |
+| 投稿者 | `[data-testid="User-Name"]` の1行目 / `@` 行 |
+| 日時 | `time[datetime]` |
+| URL | `time` の親 `a`、無ければ `a[href*="/status/"]` |
+| 引用 | `[role="link"] [data-testid="tweetText"]`（本文と別要素のとき） |
+| 画像 | `[data-testid="tweetPhoto"] img`（重複除去） |
+| リプライ | `/status/<id>` ページのみ。対象記事の後続 `article` を最大10件 |
+
+### 「さらに表示」
+
+- `[data-testid="tweet-text-show-more-link"]` を優先
+- 無ければ `[role="button"], button` のラベルが `さらに表示` / `Show more` / `もっと見る`
+- クリック後、最大1.5秒（100ms×15）本文長の増加を待つ
+- 増えなければ `truncated: true`。UI に「本文が省略されています…」を表示
+
+### プロンプト生成
+
+既定テンプレート（**1行目は空行**）:
+
+```
+（1行目：空行）
+---
+【投稿者】{author}
+【日時】{datetime}
+【URL】{url}
+
+【本文】
+{text}
+
+【引用ポスト】
+{quoted}
+
+【表示中のリプライ】
+{replies}
+```
+
+- 引用・リプライが空なら該当セクションごと削除
+- 連続改行を最大2つに圧縮、行末空白を除去（先頭の空行は保持）
+- 長すぎる場合: リプライ削除 → 本文を85%ずつ切り詰め＋「（以下略）」
+- 起動時は `url.length > 31000` をブロック
+
+### 画像コピー
+
+- `fetch(pbs.twimg.com)` → `createImageBitmap` → canvas → `toBlob("image/png")`
+- `navigator.clipboard.write([new ClipboardItem({"image/png": blob})])`
+- ボタンクリックのユーザー操作内なので `clipboardWrite` 権限なしで動作（検証済み）
+- 1枚ずつ。ChatGPT 側で `Ctrl+V`
+
+### 自動クローズ
+
+- 「ChatGPTで開く」時に `closeOnBlur` を background に送り、`storage.session` に予約
+- `browser.windows.onFocusChanged` が `WINDOW_ID_NONE`（Firefox 全体が非フォーカス）になったら、
+  予約済みの UI ウィンドウを `windows.remove`
+- **許可ダイアログ表示中は Firefox のフォーカスは失われない**ため、ダイアログは消えない
+- 許可後に ChatGPT が前面に出た時点で 1〜2 秒で閉じる（実機確認済み）
+- キャンセル時はウィンドウが残る
+- 状態を `storage.session` に置くことで、バックグラウンド休止に耐える
+
+## 7. 既知の制約・未解決
+
+1. **Chat モード必須**。ChatGPT が Work タブだと Work の新規タスクになる（回避策なし）
+2. **URL 長**。日本語本文 約3,300文字が上限。超過時は自動で省略される
+3. **画像は1枚ずつ**。クリップボードは1画像のみ
+4. **確認ウィンドウのタイトルに古い接頭辞**（例: `UI 動作確認: ...`）が付く。動作影響なし、原因未調査
+5. **ボタンの視認性**。18px の吹き出しが共有アイコンの右に出るだけで、最初は見落としやすい
+6. **右クリックメニューは埋もれる**。他拡張が多いと下の方に追加される
+7. **X の DOM 変更**で抽出・ボタン追加が壊れる可能性
+8. **拡張 ID は署名後に変更不可**。変えると別アドオン扱いになり、既存インストールは引き継がれない
+9. **テンプレートの保存**。UI で編集すると `storage.local` に保存され、既定テンプレートを上書きする
+10. **画像取得は pbs.twimg.com への fetch**。厳密に「追加リクエストゼロ」にしたい場合は無効化を検討
+
+## 8. 配布・署名・確認方法
+
+### 署名（AMO unlisted）
+
+```
+npm install                 # 初回のみ（web-ext 10）
+npm run lint                # errors 0 / warnings 1（Android 未対応の警告のみ）
+npm run sign                # AMO で署名 → web-ext-artifacts/*.xpi
+```
+
+- API キーは https://addons.mozilla.org/developers/addon/api/key/ で発行し、`WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` に入れる（`setx` で永続化可）
+- 署名には毎回 `version` を上げる。同じ版は AMO が拒否する
+- 初回は数分で自動署名。内容次第で人手レビューに入り数日かかることがある
+- `npm run build` の ZIP 内容は manifest / JS / CSS / HTML / icons / README / LICENSE のみ（HANDOFF.md・package.json は `web-ext-config.mjs` で除外）
+
+### インストール（常設）
+
+1. `about:addons` → 歯車 →「ファイルからアドオンをインストール」
+2. `web-ext-artifacts/x_post_to_chatgpt-<version>.xpi` を選択
+3. ツールバーのパズルアイコン → 拡張の「…」→「ツールバーに固定」
+
+再起動後も残る。unlisted は自動更新なし。新版は XPI を入れ直す（設定・テンプレートは保持）。
+
+### 一時アドオン（開発時）
+
+1. `about:debugging#/runtime/this-firefox`
+2. 「一時的なアドオンを読み込む…」
+3. `manifest.json`
+
+**署名済み XPI を入れたプロファイルでは、同じ ID のため一時アドオンとして読み込めない**（`already installed`）。開発は別プロファイルで行う。
+
+### ライセンス
+
+- PolyForm Noncommercial 1.0.0。非商用のみ許諾
+- 署名済み XPI にも `LICENSE` を同梱（Notices 条項の「許諾条件を一緒に渡す」を満たすため）
+- AMO の unlisted 署名はコードの公開を要求しない。GitHub 公開・非OSIライセンスと両立する
+
+### コード更新時
+
+- 常用（署名済み）: `version` を上げる → `npm run sign` → 新しい XPI を `about:addons` から入れ直す
+- 開発（一時アドオン）: `about:debugging` の「再読み込み」
+- **既存タブは F5**（コンテンツスクリプトは再読み込みされない）
+
+### 構文チェック
+
+```
+node --check content.js
+node --check background.js
+node --check ui.js
+```
+
+### 自動検証（前回使った方法）
+
+- ヘッドレス Firefox + Marionette（port 2828）
+- 拡張を XPI に zip → `Addon:Install`（temporary）
+- ローカル HTTP で X 風の fixture を配信 → `WebDriver:Navigate`
+- `WebDriver:ExecuteScript` で `[data-xpc-btn]` の有無・クリックを確認
+- fixture の HTML は一時ファイルだったため現在は未保存。必要なら再作成
+
+## 9. 次の作業候補
+
+- **AMO の API キーを取得して初回 `npm run sign`**（残っている唯一の必須作業）
+- 署名済み XPI を実プロファイルへ入れて常設化を確認
+- ボタンの視認性改善（青にする／ホバーで「ChatGPT」ラベル）
+- 「確認ウィンドウのタイトル接頭辞」の原因調査
+- X の DOM 変更に対するフォールバック（セレクタ複数化）
+- 引用ポストの画像・投稿者・URL の取得精度向上
+- 複数画像の渡し方（1枚ずつコピーの UX 改善）
+- GitHub 公開（PolyForm Noncommercial、`LICENSE` と README は整備済み）
+- 公開時に自己配布の自動更新を有効化するか判断（`gecko.update_url` を GitHub の JSON に向ける）
+- 画像 fetch を設定でオフにできるようにする
+
+## 10. 作業上の注意（重要）
+
+- **画面を操作する前には必ず「これから画面を操作します」と宣言し、ユーザーの引き渡しを待つ。**
+  無断でキー入力・クリックを送ると、ユーザーの別アプリ（OpenCode 等）に入力が流れる。
+- `SendKeys` を使う前に `GetForegroundWindow()` が対象ウィンドウと一致することを確認する。
+  一致しなければ送らない。
+- 可能なら GUI 操作を避け、ヘッドレス（Marionette / WebDriver）で検証する。
+- クリップボードに検証用文字列を残さない。
+- 検証後は必ず後片付けする:
+  - 一時アドオンを削除
+  - 開いたタブを閉じる
+  - ChatGPT のテスト下書きを削除
+- ChatGPT ウィンドウはユーザーが移動することがある。**クリック直前に `GetWindowRect` で座標を取り直す**。
+- ATOK 使用環境では、入力欄のクリアが `Ctrl+A` → `Delete` で効かないことがある。
+  `Esc` を押してから操作する。それでも消えない場合は「新しいチャット」を開いてから消す。
+- 圧縮前の確認ウィンドウは `windows.create` の別ウィンドウ。`window.close()` は効かないことがあるため、
+  background の `windows.remove` 経由で閉じる。

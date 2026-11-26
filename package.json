@@ -1,0 +1,18 @@
+{
+  "name": "x-post-to-chatgpt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "X の投稿を ChatGPT デスクトップの新規チャットへ渡す Firefox 拡張",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "web-ext lint",
+    "build": "web-ext build --overwrite-dest",
+    "sign": "web-ext sign --channel=unlisted"
+  },
+  "devDependencies": {
+    "web-ext": "^10.8.0"
+  }
+}
