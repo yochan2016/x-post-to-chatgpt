@@ -1,0 +1,12 @@
+{
+  "addons": {
+    "x-post-to-chatgpt@yodaki.net": {
+      "updates": [
+        {
+          "version": "0.2.1",
+          "update_link": "https://github.com/yochan2016/x-post-to-chatgpt/releases/download/v0.2.1/x-post-to-chatgpt-0.2.1.xpi"
+        }
+      ]
+    }
+  }
+}

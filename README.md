@@ -85,10 +85,12 @@ Node.js 20 以上が必要です。
 
 ```
 npm install     # 初回のみ
-npm run lint    # manifest とコードの静的検査
+npm run lint    # manifest とコードの静的検査（自己配布向けに --self-hosted）
 npm run build   # web-ext-artifacts/ に ZIP を作成
 npm run sign    # AMO で署名（unlisted）して XPI を取得
 ```
+
+`npm run build` の `.zip` は**署名されていません**。Firefox に入れようとすると「このアドオンは検証されていないため、インストールできませんでした」で弾かれます。インストールするのは `npm run sign` が出力する **`.xpi`** です。
 
 ### 署名（unlisted）
 
@@ -104,8 +106,19 @@ npm run sign    # AMO で署名（unlisted）して XPI を取得
 4. `web-ext-artifacts/` に署名済み XPI ができる（ファイル名は AMO が決める。配布時は改名してよい）
 
 - 同じ `version` は AMO が拒否します。署名のたびに必ず上げてください
-- unlisted は自動更新されません。新版は手動で入れ直します
+- unlisted は AMO からの自動更新がありません。`update_url` で自前の更新情報を配っています（下記）
 - 拡張 ID（`browser_specific_settings.gecko.id`）は署名後に変更できません。変えると別アドオン扱いになり、既存のインストールは引き継がれません
+
+### 自動更新
+
+`manifest.json` の `gecko.update_url` が `https://yochan2016.github.io/x-post-to-chatgpt/updates.json` を指しており、Firefox が定期的（約1日）に確認します。
+
+1. `manifest.json` の `version` を上げて `npm run sign`
+2. GitHub Releases で新しいタグを作り、XPI を **`x-post-to-chatgpt-<version>.xpi`** の名前で添付
+3. `docs/updates.json` の `version` と `update_link` を新しい版に書き換えて push
+4. GitHub Pages（ブランチ `main` / フォルダ `/docs`）が有効なら、次回の確認で自動更新される
+
+`update_url` は署名済みパッケージに含まれるため、**0.2.1 は最初だけ手動でインストール**する必要があります。以後は自動です。
 
 設計判断の理由や実機で分かった落とし穴は [docs/development-notes.md](docs/development-notes.md) にまとめています。
 

@@ -46,6 +46,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 - 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）。実機確認済み
 - 0.2.0: 公開前レビューの P0 を反映。データ申告を `websiteContent` に、投稿データの受け渡しをウィンドウ単位のトークンに、リプライ抽出を会話タイムライン内に限定
+- 0.2.1: `gecko.update_url` を追加（自己配布の自動更新）。`npm run lint` は `--self-hosted` 付きに変更。`docs/updates.json` を GitHub Pages で配信する
 - 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/<hash>-<version>.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
 - 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
@@ -87,6 +88,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 - `strict_min_version`: `140.0`（`data_collection_permissions` の組み込み同意 UI が 140 以降）
 - `data_collection_permissions.required`: `["websiteContent"]`（2025-11-03 以降 AMO 新規提出で必須。Mozilla の定義では「アドオンまたはローカルのブラウザの外で扱われるデータ」が送信に当たるため、`none` ではなくウェブサイトの内容として申告する）
 - `permissions`: `menus`, `storage`
+- `update_url`: `https://yochan2016.github.io/x-post-to-chatgpt/updates.json`（自己配布の自動更新。AMO ホストではないので `web-ext lint` は `--self-hosted` を付ける）
 - `host_permissions`: `https://x.com/*`, `https://twitter.com/*`, `https://pbs.twimg.com/*`
 - `background.scripts`: `background.js`（Firefox の MV3 イベントページ）
 - `action` に `default_popup` は**なし**（クリックで中央の投稿を開く）
@@ -246,6 +248,7 @@ npm run sign                # AMO で署名 → web-ext-artifacts/*.xpi
 - 0.1.0 は `Waiting for validation` → `Waiting for approval` → 数十秒で自動承認。人手レビューに入る場合は数日かかることがある
 - `--no-input` を付けているので、対話待ちで止まることはない
 - `npm run build` の ZIP 内容は manifest / JS / CSS / HTML / icons / README / LICENSE のみ（`docs/` と `package.json` は `web-ext-config.mjs` で除外）
+- **`npm run build` の `.zip` は署名なし**。Firefox に入れると「このアドオンは検証されていないため、インストールできませんでした」で弾かれる。入れるのは `npm run sign` が出力する `.xpi`。紛らわしいので、検証用にビルドした ZIP は消しておく
 
 ### インストール（常設）
 
@@ -270,6 +273,15 @@ npm run sign                # AMO で署名 → web-ext-artifacts/*.xpi
 - PolyForm Noncommercial 1.0.0。非商用のみ許諾
 - 署名済み XPI にも `LICENSE` を同梱（Notices 条項の「許諾条件を一緒に渡す」を満たすため）
 - AMO の unlisted 署名はコードの公開を要求しない。GitHub 公開・非OSIライセンスと両立する
+
+### 自動更新（update_url）
+
+- `manifest.json` の `gecko.update_url` → `https://yochan2016.github.io/x-post-to-chatgpt/updates.json`
+- `docs/updates.json` が実体。GitHub Pages を **ブランチ `main` / フォルダ `/docs`** で有効にすると配信される
+- `update_link` は `https://github.com/yochan2016/x-post-to-chatgpt/releases/download/v<version>/x-post-to-chatgpt-<version>.xpi`。**Release の添付ファイル名をこの名前に揃える**
+- `update_url` も署名対象なので、追加した版（0.2.1）は一度手動で入れる必要がある
+- `web-ext lint` は既定で AMO ホスト前提の `MANIFEST_UPDATE_URL` エラーを出す。`--self-hosted` を付ける（`npm run lint` に設定済み）
+- GitHub の Release 添付 URL は 302 リダイレクトになる。Firefox は追従するが、もし更新が失敗する場合は XPI を `docs/` に置いて Pages から直接配信する
 
 ### コード更新時
 
