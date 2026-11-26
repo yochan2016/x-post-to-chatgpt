@@ -42,18 +42,18 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 **実装・実機確認済み（0.2.3）。**
 
-**配布（2026-11-26 公開済み）:** GitHub Releases で配布中（最新 0.2.3）。AMO unlisted（自己配布）で署名し、`update_url` で自動更新する。
+**配布（2026-11-26 公開済み）:** GitHub Releases で配布中（最新 0.2.4）。AMO unlisted（自己配布）で署名し、`update_url` で自動更新する。
 
 - リポジトリ: https://github.com/yochan2016/x-post-to-chatgpt
 - 配信: GitHub Pages（ブランチ `main` / フォルダ `/docs`）の `updates.json`
-- リリース: `v0.2.3`（アセット名 `x-post-to-chatgpt-0.2.3.xpi`、`Content-Type: application/x-xpinstall` で配信されることを確認）
+- リリース: `v0.2.4`（アセット名 `x-post-to-chatgpt-0.2.4.xpi`、`Content-Type: application/x-xpinstall` で配信されることを確認）
 
 - 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）。実機確認済み
 - 0.2.0: 公開前レビューの P0 を反映。データ申告を `websiteContent` に、投稿データの受け渡しをウィンドウ単位のトークンに、リプライ抽出を会話タイムライン内に限定
 - 0.2.1: `gecko.update_url` を追加（自己配布の自動更新）。`npm run lint` は `--self-hosted` 付きに変更。`docs/updates.json` を GitHub Pages で配信する
 - 0.2.2: 長文処理の堅牢化（サロゲートを割らない切詰め、「（以下略）」込みの長さ判定、引用も省略対象に）、プレースホルダー置換を1回のコールバックに、プライベートウィンドウ非対応（`incognito: not_allowed`）
 - 0.2.3: 画像を URL としてプロンプトの `【添付画像】` に載せる（ChatGPT 側が取得）。省略理由を積み上げ表示。保存済みテンプレートに `{images}` が無い場合は注意書きを出す。実機確認済み（2026-11-26）
-- 0.2.4（未リリース）: 公開前レビュー（Sol）の指摘を反映。省略判定を「プロンプトが実際に変わった項目」に限定、本文を空まで削る、起動上限を `encodedLength` の1本に統一、`promptImageUrl` の置換対象を `small`/`medium` に限定、`stripSection` を行頭一致に、`package-lock.json` の版を同期
+- 0.2.4: 公開前レビュー（Sol）の指摘を反映。省略判定を「プロンプトが実際に変わった項目」に限定、本文を空まで削る、起動上限を `encodedLength` の1本に統一、`promptImageUrl` の置換対象を `small`/`medium` に限定、`stripSection` を行頭一致に、`package-lock.json` の版を同期。実機確認済み（2026-11-26）
 
 **0.2.1 実機確認済み（2026-11-26）**: 自動クローズ／同一ページから続けて2つ開いたときの取り違え防止／リプライ欄への無関係な投稿の混入なし、をすべて確認。
 
