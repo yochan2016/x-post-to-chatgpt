@@ -42,7 +42,11 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 **実装・実機確認済み。** 追加機能の要望は現時点でなし。
 
-**配布（2026-11-26 署名済み）:** AMO unlisted（自己配布）で 0.1.0 → 0.1.1 を署名。`npm run sign` で取得した XPI を `about:addons` から常設インストールする。
+**配布（2026-11-26 公開済み）:** GitHub Releases で 0.2.1 を配布中。AMO unlisted（自己配布）で署名し、`update_url` で自動更新する。
+
+- リポジトリ: https://github.com/yochan2016/x-post-to-chatgpt
+- 配信: GitHub Pages（ブランチ `main` / フォルダ `/docs`）の `updates.json`
+- リリース: `v0.2.1`（アセット名 `x-post-to-chatgpt-0.2.1.xpi`、`Content-Type: application/x-xpinstall` で配信されることを確認）
 
 - 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）。実機確認済み
 - 0.2.0: 公開前レビューの P0 を反映。データ申告を `websiteContent` に、投稿データの受け渡しをウィンドウ単位のトークンに、リプライ抽出を会話タイムライン内に限定

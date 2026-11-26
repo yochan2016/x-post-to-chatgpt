@@ -8,9 +8,11 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの新�
 
 ## インストール
 
-`about:addons` の歯車 →「ファイルからアドオンをインストール」で署名済みの `.xpi` を選びます（XPI を Firefox のウィンドウへドラッグしても入ります）。一度入れれば Firefox を再起動しても残ります。
+最新版は [Releases](https://github.com/yochan2016/x-post-to-chatgpt/releases/latest) から `x-post-to-chatgpt-<version>.xpi` をダウンロードしてください。
 
-配布用の XPI は Mozilla AMO の自己配布（unlisted）で署名します。拡張 ID は `x-post-to-chatgpt@yodaki.net` で、Firefox 140 以降が必要です。
+`about:addons` の歯車 →「ファイルからアドオンをインストール」でその `.xpi` を選びます（XPI を Firefox のウィンドウへドラッグしても入ります）。一度入れれば Firefox を再起動しても残ります。
+
+配布用の XPI は Mozilla AMO の自己配布（unlisted）で署名しています。拡張 ID は `x-post-to-chatgpt@yodaki.net` で、Firefox 140 以降が必要です。
 
 ### 開発中の一時読み込み
 
