@@ -54,6 +54,8 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 - 0.2.2: 長文処理の堅牢化（サロゲートを割らない切詰め、「（以下略）」込みの長さ判定、引用も省略対象に）、プレースホルダー置換を1回のコールバックに、プライベートウィンドウ非対応（`incognito: not_allowed`）
 
 **0.2.1 実機確認済み（2026-11-26）**: 自動クローズ／同一ページから続けて2つ開いたときの取り違え防止／リプライ欄への無関係な投稿の混入なし、をすべて確認。
+
+**自動更新も実機確認済み（2026-11-26）**: 0.2.1 をインストールした状態で 0.2.2 をリリース → `about:addons` の歯車「更新を確認」で 0.2.2 に置き換わることを確認。GitHub Pages の `updates.json` → Release の XPI という経路が通っている。
 - 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/<hash>-<version>.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
 - 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
@@ -242,6 +244,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 11. **リプライ抽出は DOM 構造に依存**。`section[aria-label="Timeline: Conversation"]` と見出し／`placementTracking` を境界の手がかりにしている。X 側の変更で境界を誤ると、リプライが欠けるか、逆に余分な投稿が混ざる可能性がある
 12. **投稿が無いページでは何も起きない**。`/explore` や設定画面でツールバーボタンを押しても、`article[data-testid="tweet"]` が無ければデータが取れず、窓もエラーも出さない（意図した挙動。通知が欲しければ要検討）
 13. **プライベートウィンドウでは動かない**（`incognito: "not_allowed"`）。有効にすると、確認ウィンドウが通常ウィンドウとして開き、投稿内容が `storage.session` に残るため
+14. **未解決**: 2026-11-26 に「インストール済みの 0.2.1 が `about:addons` から消えていた」という報告があった。原因不明（自動更新の失敗で削除される経路は無いはず）。再現したら `extensions.json` と `extensions.webextensions.uuids` を確認する
 
 ## 8. 配布・署名・確認方法
 
