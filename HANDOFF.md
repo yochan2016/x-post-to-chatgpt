@@ -42,7 +42,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 **配布（2026-11-26 署名済み）:** AMO unlisted（自己配布）で 0.1.0 → 0.1.1 を署名。`npm run sign` で取得した XPI を `about:addons` から常設インストールする。
 
-- 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）
+- 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）。実機確認済み
 - 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/<hash>-<version>.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
 - 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
@@ -202,7 +202,9 @@ F:\Projects\X_post_send_firefoxextension\
 
 一時アドオン時代は background が常駐していたが、**署名済み（正式インストール）では MV3 のイベントページになり、無操作 30 秒程度で休止する**。`windows.onFocusChanged` は休止中のイベントページを起こさないため、`codex://` の許可ダイアログを開いたまま時間が経つと、ChatGPT が前面に出ても background の監視が動かず、ウィンドウが残った。
 
-そこで監視を background から ui.js（ウィンドウが開いている間は必ず生きている）へ移し、`storage.session` の予約も廃止した。**原因の断定までは未確認**（イベントが発火していない可能性と、休止の可能性の両方がある）。v0.1.1 で再現しなければ、休止説で確定。
+そこで監視を background から ui.js（ウィンドウが開いている間は必ず生きている）へ移し、`storage.session` の予約も廃止した。**v0.1.1 の実機確認で解消**（許可ダイアログを挟んでも ChatGPT 前面化で閉じる）。
+
+教訓: **署名済み＝MV3 イベントページは 30 秒ほどで休止する**。フォーカス変化のような「ユーザー操作ではないタイミングのイベント」に依存する処理を background に置かない。
 
 ## 7. 既知の制約・未解決
 
@@ -282,8 +284,6 @@ node --check ui.js
 
 ## 9. 次の作業候補
 
-- **v0.1.1 を入れて自動クローズの再現確認**（残っている唯一の必須作業）
-- 直らなかった場合: `about:debugging` で ui.html のコンソールを開き、`browser.windows.onFocusChanged` が発火しているかを確認
 - ボタンの視認性改善（青にする／ホバーで「ChatGPT」ラベル）
 - 「確認ウィンドウのタイトル接頭辞」の原因調査
 - X の DOM 変更に対するフォールバック（セレクタ複数化）
