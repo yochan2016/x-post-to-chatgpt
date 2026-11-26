@@ -47,6 +47,8 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 - 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）。実機確認済み
 - 0.2.0: 公開前レビューの P0 を反映。データ申告を `websiteContent` に、投稿データの受け渡しをウィンドウ単位のトークンに、リプライ抽出を会話タイムライン内に限定
 - 0.2.1: `gecko.update_url` を追加（自己配布の自動更新）。`npm run lint` は `--self-hosted` 付きに変更。`docs/updates.json` を GitHub Pages で配信する
+
+**0.2.1 実機確認済み（2026-11-26）**: 自動クローズ／同一ページから続けて2つ開いたときの取り違え防止／リプライ欄への無関係な投稿の混入なし、をすべて確認。
 - 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/<hash>-<version>.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
 - 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
@@ -231,6 +233,7 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 9. **テンプレートの保存**。UI で編集すると `storage.local` に保存され、既定テンプレートを上書きする
 10. **画像取得は pbs.twimg.com への fetch**。厳密に「追加リクエストゼロ」にしたい場合は無効化を検討
 11. **リプライ抽出は DOM 構造に依存**。`section[aria-label="Timeline: Conversation"]` と見出し／`placementTracking` を境界の手がかりにしている。X 側の変更で境界を誤ると、リプライが欠けるか、逆に余分な投稿が混ざる可能性がある
+12. **投稿が無いページでは何も起きない**。`/explore` や設定画面でツールバーボタンを押しても、`article[data-testid="tweet"]` が無ければデータが取れず、窓もエラーも出さない（意図した挙動。通知が欲しければ要検討）
 
 ## 8. 配布・署名・確認方法
 
