@@ -40,9 +40,10 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 **実装・実機確認済み。** 追加機能の要望は現時点でなし。
 
-**配布（2026-11-26 署名済み）:** AMO unlisted（自己配布）で 0.1.0 を署名。`npm run sign` で取得した XPI を `about:addons` から常設インストールする。実プロファイルへの常設化だけが残作業。
+**配布（2026-11-26 署名済み）:** AMO unlisted（自己配布）で 0.1.0 → 0.1.1 を署名。`npm run sign` で取得した XPI を `about:addons` から常設インストールする。
 
-- 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/571c4e249eb043d685e5-0.1.0.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
+- 0.1.1: 署名後に自動クローズが効かなくなった件を修正（監視を background から ui.js へ移動。詳細は §6）
+- 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/<hash>-<version>.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
 - 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
 - ライセンスは PolyForm Noncommercial 1.0.0。AMO unlisted はコード公開を要求せず、GitHub 公開と両立する
@@ -107,7 +108,7 @@ F:\Projects\X_post_send_firefoxextension\
 [ui.js]
   resolve(tabId) → background が storage か content から取得
   プレビュー表示 → プロンプト生成
-  「ChatGPTで開く」→ closeOnBlur 登録 → location.href = codex://new?prompt=...
+  「ChatGPTで開く」→ windows.onFocusChanged を自前で監視 → location.href = codex://new?prompt=...
 ```
 
 ### メッセージ
@@ -119,14 +120,12 @@ F:\Projects\X_post_send_firefoxextension\
 | bg → content | `getContextPost` | 最後に右クリックした投稿を展開・抽出 |
 | ui → bg | `resolve` | tabId の投稿データを取得 |
 | ui → bg | `closeWindow` | 自ウィンドウを削除 |
-| ui → bg | `closeOnBlur` | Firefox がフォーカスを失ったら閉じる予約 |
 
 ### storage
 
 | キー | 内容 |
 |---|---|
 | `storage.session["snap:<tabId>"]` | 抽出済み投稿データ |
-| `storage.session["closeOnBlur:<windowId>"]` | 自動クローズ予約（時刻） |
 | `storage.local["template"]` | ユーザー編集したテンプレート |
 
 ## 6. 実装の要点
@@ -192,20 +191,25 @@ F:\Projects\X_post_send_firefoxextension\
 
 ### 自動クローズ
 
-- 「ChatGPTで開く」時に `closeOnBlur` を background に送り、`storage.session` に予約
-- `browser.windows.onFocusChanged` が `WINDOW_ID_NONE`（Firefox 全体が非フォーカス）になったら、
-  予約済みの UI ウィンドウを `windows.remove`
+- 「ChatGPTで開く」時に **ui.js 自身**が `browser.windows.onFocusChanged` を監視する（v0.1.1〜）
+- `WINDOW_ID_NONE`（Firefox 全体が非フォーカス）になったら 300ms 待ち、`document.hasFocus()` が false なら自ウィンドウを `windows.remove`
 - **許可ダイアログ表示中は Firefox のフォーカスは失われない**ため、ダイアログは消えない
-- 許可後に ChatGPT が前面に出た時点で 1〜2 秒で閉じる（実機確認済み）
-- キャンセル時はウィンドウが残る
-- 状態を `storage.session` に置くことで、バックグラウンド休止に耐える
+- 許可後に ChatGPT が前面に出た時点で 1〜2 秒で閉じる（v0.1.0 で実機確認済み）
+- キャンセル時は、フォーカスが戻るので閉じない
+- 起動後 120 秒を超えたら監視をやめる
+
+#### v0.1.0 で自動クローズが効かなかった件（v0.1.1 で変更）
+
+一時アドオン時代は background が常駐していたが、**署名済み（正式インストール）では MV3 のイベントページになり、無操作 30 秒程度で休止する**。`windows.onFocusChanged` は休止中のイベントページを起こさないため、`codex://` の許可ダイアログを開いたまま時間が経つと、ChatGPT が前面に出ても background の監視が動かず、ウィンドウが残った。
+
+そこで監視を background から ui.js（ウィンドウが開いている間は必ず生きている）へ移し、`storage.session` の予約も廃止した。**原因の断定までは未確認**（イベントが発火していない可能性と、休止の可能性の両方がある）。v0.1.1 で再現しなければ、休止説で確定。
 
 ## 7. 既知の制約・未解決
 
 1. **Chat モード必須**。ChatGPT が Work タブだと Work の新規タスクになる（回避策なし）
 2. **URL 長**。日本語本文 約3,300文字が上限。超過時は自動で省略される
 3. **画像は1枚ずつ**。クリップボードは1画像のみ
-4. **確認ウィンドウのタイトルに古い接頭辞**（例: `UI 動作確認: ...`）が付く。動作影響なし、原因未調査
+4. **確認ウィンドウのタイトル接頭辞**（旧: `UI 動作確認: ...`）は、0.1.0 の再インストールで解消。現在は `拡張機能: (X Post to ChatGPT) - X投稿 → ChatGPT`
 5. **ボタンの視認性**。18px の吹き出しが共有アイコンの右に出るだけで、最初は見落としやすい
 6. **右クリックメニューは埋もれる**。他拡張が多いと下の方に追加される
 7. **X の DOM 変更**で抽出・ボタン追加が壊れる可能性
@@ -278,7 +282,8 @@ node --check ui.js
 
 ## 9. 次の作業候補
 
-- **署名済み XPI を実プロファイルへ入れて常設化を確認**（残っている唯一の必須作業）
+- **v0.1.1 を入れて自動クローズの再現確認**（残っている唯一の必須作業）
+- 直らなかった場合: `about:debugging` で ui.html のコンソールを開き、`browser.windows.onFocusChanged` が発火しているかを確認
 - ボタンの視認性改善（青にする／ホバーで「ChatGPT」ラベル）
 - 「確認ウィンドウのタイトル接頭辞」の原因調査
 - X の DOM 変更に対するフォールバック（セレクタ複数化）

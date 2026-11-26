@@ -193,6 +193,31 @@ function showError(message) {
   setStatus(message, true);
 }
 
+// Firefox がフォーカスを失ったら（＝ChatGPT などの外部アプリが前面に出たら）このウィンドウを閉じる。
+// background のイベントページは休止しうるので、ウィンドウ自身が監視する。
+const CLOSE_AFTER_LAUNCH_MS = 120000;
+let closeArmed = false;
+
+function armCloseOnSwitch() {
+  if (closeArmed) return;
+  closeArmed = true;
+  const launchedAt = Date.now();
+  const listener = async (windowId) => {
+    if (windowId !== browser.windows.WINDOW_ID_NONE) return;
+    if (Date.now() - launchedAt > CLOSE_AFTER_LAUNCH_MS) {
+      browser.windows.onFocusChanged.removeListener(listener);
+      return;
+    }
+    // 起動直後のフォーカス揺れや、許可ダイアログから戻った場合は閉じない
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    if (document.hasFocus()) return;
+    browser.windows.onFocusChanged.removeListener(listener);
+    const self = await browser.windows.getCurrent();
+    await browser.windows.remove(self.id).catch(() => {});
+  };
+  browser.windows.onFocusChanged.addListener(listener);
+}
+
 async function launch() {
   const prompt = els.prompt.value.trimEnd();
   if (!prompt.trim()) return;
@@ -202,11 +227,7 @@ async function launch() {
     return;
   }
   setStatus("ChatGPTを起動しています…");
-  try {
-    await browser.runtime.sendMessage({ type: "closeOnBlur" });
-  } catch {
-    // background may be unavailable; still try to launch
-  }
+  armCloseOnSwitch();
   location.href = url;
 }
 

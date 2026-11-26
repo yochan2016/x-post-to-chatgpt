@@ -1,21 +1,7 @@
 const MENU_ID = "xpost-to-chatgpt";
 const SNAP_PREFIX = "snap:";
-const CLOSE_PREFIX = "closeOnBlur:";
 const UI_WIDTH = 480;
 const UI_HEIGHT = 700;
-
-browser.windows.onFocusChanged.addListener(async (windowId) => {
-  if (windowId !== browser.windows.WINDOW_ID_NONE) return;
-  const all = await browser.storage.session.get(null);
-  const now = Date.now();
-  for (const [key, at] of Object.entries(all)) {
-    if (!key.startsWith(CLOSE_PREFIX)) continue;
-    const id = Number(key.slice(CLOSE_PREFIX.length));
-    await browser.storage.session.remove(key);
-    if (!Number.isFinite(id) || now - at < 500 || now - at > 120000) continue;
-    browser.windows.remove(id).catch(() => {});
-  }
-});
 
 async function setupMenus() {
   await browser.menus.removeAll();
@@ -104,11 +90,6 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return browser.windows.remove(sender.tab.windowId)
       .then(() => ({ ok: true }))
       .catch(() => ({ ok: false }));
-  }
-  if (msg?.type === "closeOnBlur" && sender.tab?.windowId != null) {
-    return browser.storage.session
-      .set({ [CLOSE_PREFIX + sender.tab.windowId]: Date.now() })
-      .then(() => ({ ok: true }));
   }
   return undefined;
 });
