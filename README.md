@@ -92,7 +92,7 @@ npm run sign    # AMO で署名（unlisted）して XPI を取得
    ```
 
 3. `manifest.json` の `version` を上げてから `npm run sign`
-4. `web-ext-artifacts/x_post_to_chatgpt-<version>.xpi` ができるので、`about:addons` から入れ直す
+4. `web-ext-artifacts/` に署名済み XPI ができる（ファイル名は AMO が決める。配布時は改名してよい）
 
 - 同じ `version` は AMO が拒否します。署名のたびに必ず上げてください
 - unlisted は自動更新されません。新版は手動で入れ直します

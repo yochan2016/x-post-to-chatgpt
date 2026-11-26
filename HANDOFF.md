@@ -40,11 +40,13 @@ Firefox で表示中の X 投稿を、ChatGPT デスクトップアプリの**�
 
 **実装・実機確認済み。** 追加機能の要望は現時点でなし。
 
-**配布（2026-11-26 準備済み・未署名）:** AMO unlisted（自己配布）署名へ移行。`npm run sign` で署名済み XPI を取得し、`about:addons` から常設インストールする。AMO の API キー取得と初回 `sign` だけが残作業。
+**配布（2026-11-26 署名済み）:** AMO unlisted（自己配布）で 0.1.0 を署名。`npm run sign` で取得した XPI を `about:addons` から常設インストールする。実プロファイルへの常設化だけが残作業。
 
-- 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（ID はメールアドレス形式が慣例。まだ未署名なので変更は自由、署名後は不可）
+- 初回署名は API 投入から数十秒で**自動承認**（人手レビューなし）。出力は `web-ext-artifacts/571c4e249eb043d685e5-0.1.0.xpi`（ファイル名は AMO が決める。配布時に改名してよい）
+- 拡張 ID を `x-post-to-chatgpt@local` → `x-post-to-chatgpt@yodaki.net` に変更（**署名済みのため以後変更不可**）
 - `strict_min_version` を 128 → 140（`data_collection_permissions` の対象バージョン）
 - ライセンスは PolyForm Noncommercial 1.0.0。AMO unlisted はコード公開を要求せず、GitHub 公開と両立する
+- API キーは `HKCU\Environment` の `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET`（`setx`）に保存済み。**OpenCode や既存ターミナルは起動時の環境を持ち続ける**ので、古いセッションでは `[Environment]::GetEnvironmentVariable(...,'User')` で読み直す
 
 確認済みの動作:
 
@@ -223,16 +225,20 @@ npm run sign                # AMO で署名 → web-ext-artifacts/*.xpi
 
 - API キーは https://addons.mozilla.org/developers/addon/api/key/ で発行し、`WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` に入れる（`setx` で永続化可）
 - 署名には毎回 `version` を上げる。同じ版は AMO が拒否する
-- 初回は数分で自動署名。内容次第で人手レビューに入り数日かかることがある
+- 出力ファイル名は AMO が決める（`<hash>-<version>.xpi`）。配布時に改名してよい
+- 0.1.0 は `Waiting for validation` → `Waiting for approval` → 数十秒で自動承認。人手レビューに入る場合は数日かかることがある
+- `--no-input` を付けているので、対話待ちで止まることはない
 - `npm run build` の ZIP 内容は manifest / JS / CSS / HTML / icons / README / LICENSE のみ（HANDOFF.md・package.json は `web-ext-config.mjs` で除外）
 
 ### インストール（常設）
 
 1. `about:addons` → 歯車 →「ファイルからアドオンをインストール」
-2. `web-ext-artifacts/x_post_to_chatgpt-<version>.xpi` を選択
+2. `web-ext-artifacts/` の署名済み XPI を選択
 3. ツールバーのパズルアイコン → 拡張の「…」→「ツールバーに固定」
 
 再起動後も残る。unlisted は自動更新なし。新版は XPI を入れ直す（設定・テンプレートは保持）。
+
+**旧 ID（`@local`）の一時アドオンが読み込まれたままだと別アドオンとして並ぶ**ので、`about:debugging` で先に削除する。
 
 ### 一時アドオン（開発時）
 
@@ -272,8 +278,7 @@ node --check ui.js
 
 ## 9. 次の作業候補
 
-- **AMO の API キーを取得して初回 `npm run sign`**（残っている唯一の必須作業）
-- 署名済み XPI を実プロファイルへ入れて常設化を確認
+- **署名済み XPI を実プロファイルへ入れて常設化を確認**（残っている唯一の必須作業）
 - ボタンの視認性改善（青にする／ホバーで「ChatGPT」ラベル）
 - 「確認ウィンドウのタイトル接頭辞」の原因調査
 - X の DOM 変更に対するフォールバック（セレクタ複数化）
