@@ -1,6 +1,6 @@
 {
   "name": "x-post-to-chatgpt",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "X の投稿を ChatGPT デスクトップの新規チャットへ渡す Firefox 拡張",
   "license": "SEE LICENSE IN LICENSE",

@@ -51,14 +51,24 @@ function setStatus(message, isError = false) {
 // 投稿本文に $& や {quoted} が含まれても、置換構文や二重置換の影響を受けない。
 const PLACEHOLDER_RE = /\{(author|datetime|url|text|quoted|replies|images)\}/g;
 
+// 見出しとプレースホルダーが単独行で並ぶセクションだけを消す。
+// テンプレート内の別の文に含まれる「【添付画像】」などを巻き込まない。
+function stripSection(text, heading, placeholder) {
+  const re = new RegExp(
+    `^[ \\t]*【${heading}】[ \\t]*(?:\\n[ \\t]*)?\\{${placeholder}\\}[ \\t]*\\n?`,
+    "gm"
+  );
+  return text.replace(re, "");
+}
+
 function buildPrompt(data, tpl) {
   let text = tpl;
-  if (!data.quoted) text = text.replace(/【引用ポスト】\s*\{quoted\}/, "");
+  if (!data.quoted) text = stripSection(text, "引用ポスト", "quoted");
   if (!data.replies || data.replies.length === 0) {
-    text = text.replace(/【表示中のリプライ】\s*\{replies\}/, "");
+    text = stripSection(text, "表示中のリプライ", "replies");
   }
   if (!data.images || data.images.length === 0) {
-    text = text.replace(/【添付画像】\s*\{images\}/, "");
+    text = stripSection(text, "添付画像", "images");
   }
   const replies = (data.replies || [])
     .map((reply) => `- ${reply.author} ${reply.handle}\n${reply.text}`)
@@ -105,45 +115,46 @@ function fitPrompt(data, tpl) {
     return { prompt, note: "" };
   }
 
+  // 実際にプロンプトが変わった項目だけを「省略した」と数える。
+  // リプライが元から無い投稿で「リプライを省略しました」と出さないため。
+  const drop = (next, label) => {
+    const rendered = buildPrompt(next, tpl);
+    if (rendered !== prompt) {
+      dropped.push(label);
+      prompt = rendered;
+    }
+    return encodedLength(prompt) <= MAX_URL_LENGTH;
+  };
+
   let current = { ...data, replies: [] };
-  dropped.push("表示中のリプライ");
-  prompt = buildPrompt(current, tpl);
-  if (encodedLength(prompt) <= MAX_URL_LENGTH) {
+  if (drop(current, "表示中のリプライ")) {
     return { prompt, note: omissionNote(dropped) };
   }
 
-  if (current.quoted) {
-    current = { ...current, quoted: "" };
-    dropped.push("引用ポスト");
-    prompt = buildPrompt(current, tpl);
-    if (encodedLength(prompt) <= MAX_URL_LENGTH) {
-      return { prompt, note: omissionNote(dropped) };
-    }
+  current = { ...current, quoted: "" };
+  if (drop(current, "引用ポスト")) {
+    return { prompt, note: omissionNote(dropped) };
   }
 
-  // 「（以下略）」を含めた最終形で上限を測る
+  // 「（以下略）」を含めた最終形で上限を測る。本文は空になるまで削る
   const originalText = current.text || "";
   let body = originalText;
-  while (body.length > 100) {
-    const candidate = buildPrompt({ ...current, text: `${body}${ELLIPSIS}` }, tpl);
+  while (body.length > 0) {
+    const candidate = buildPrompt({ ...current, text: body ? `${body}${ELLIPSIS}` : "" }, tpl);
     if (encodedLength(candidate) <= MAX_URL_LENGTH) break;
     body = truncateAtCodePoint(body, Math.floor(body.length * 0.85));
   }
-  current = { ...current, text: `${body}${ELLIPSIS}` };
   if (body.length < originalText.length) dropped.push("本文");
+  current = { ...current, text: body ? `${body}${ELLIPSIS}` : "" };
   prompt = buildPrompt(current, tpl);
   if (encodedLength(prompt) <= MAX_URL_LENGTH) {
     return { prompt, note: omissionNote(dropped) };
   }
 
-  // 本文を削っても収まらない場合の最後の手段として画像リンクを落とす
-  if (current.images && current.images.length > 0) {
-    current = { ...current, images: [] };
-    dropped.push("添付画像");
-    prompt = buildPrompt(current, tpl);
-    if (encodedLength(prompt) <= MAX_URL_LENGTH) {
-      return { prompt, note: omissionNote(dropped) };
-    }
+  // 本文を空にしても収まらない場合の最後の手段として画像リンクを落とす
+  current = { ...current, images: [] };
+  if (drop(current, "添付画像")) {
+    return { prompt, note: omissionNote(dropped) };
   }
 
   return { prompt, note: "テンプレートが長すぎて上限に収まりません。プロンプトを短くしてください。" };
@@ -151,21 +162,26 @@ function fitPrompt(data, tpl) {
 
 // X はタイムラインで縮小版（name=small / 680px）を配信する。
 // 画像内の文字まで読ませたいので、プロンプトには拡大版（元画像が小さければ同じ）を載せる。
-function imageUrlForPrompt(src) {
+// ChatGPT が取得できない URL（blob: など）は null を返して落とす。
+const SMALL_IMAGE_VARIANTS = new Set(["small", "medium"]);
+function promptImageUrl(src) {
+  let url;
   try {
-    const url = new URL(src);
-    if (url.hostname !== "pbs.twimg.com") return src;
-    url.searchParams.set("name", "large");
-    return url.toString();
+    url = new URL(src);
   } catch {
-    return src;
+    return null;
   }
+  if (url.protocol !== "https:") return null;
+  if (url.hostname === "pbs.twimg.com" && SMALL_IMAGE_VARIANTS.has(url.searchParams.get("name"))) {
+    url.searchParams.set("name", "large");
+  }
+  return url.toString();
 }
 
 function refreshPrompt() {
   if (!snapshot) return;
-  const data = { ...snapshot, images: (snapshot.images || []).map(imageUrlForPrompt) };
-  const { prompt, note } = fitPrompt(data, template);
+  const images = (snapshot.images || []).map(promptImageUrl).filter(Boolean);
+  const { prompt, note } = fitPrompt({ ...snapshot, images }, template);
   els.prompt.value = prompt;
   const notes = [];
   if (snapshot.truncated) {
@@ -294,14 +310,13 @@ function armCloseOnSwitch() {
 async function launch() {
   const prompt = els.prompt.value.trimEnd();
   if (!prompt.trim()) return;
-  const url = `codex://new?prompt=${encodeURIComponent(prompt)}`;
-  if (url.length > 31000) {
+  if (encodedLength(prompt) > MAX_URL_LENGTH) {
     setStatus("プロンプトが長すぎます。短くしてから再度お試しください。", true);
     return;
   }
   setStatus("ChatGPTを起動しています…");
   armCloseOnSwitch();
-  location.href = url;
+  location.href = `codex://new?prompt=${encodeURIComponent(prompt)}`;
 }
 
 async function init() {
