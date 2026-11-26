@@ -44,6 +44,10 @@ function setStatus(message, isError = false) {
   els.status.classList.toggle("error", isError);
 }
 
+// 本文のプレースホルダーだけを一度で置換する。
+// 投稿本文に $& や {quoted} が含まれても、置換構文や二重置換の影響を受けない。
+const PLACEHOLDER_RE = /\{(author|datetime|url|text|quoted|replies)\}/g;
+
 function buildPrompt(data, tpl) {
   let text = tpl;
   if (!data.quoted) text = text.replace(/【引用ポスト】\s*\{quoted\}/, "");
@@ -61,10 +65,8 @@ function buildPrompt(data, tpl) {
     quoted: data.quoted || "",
     replies,
   };
-  for (const [key, value] of Object.entries(values)) {
-    text = text.replaceAll(`{${key}}`, value);
-  }
   return text
+    .replace(PLACEHOLDER_RE, (match, key) => values[key] ?? match)
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]+$/gm, "")
     .replace(/\s+$/, "");
@@ -74,23 +76,50 @@ function encodedLength(prompt) {
   return "codex://new?prompt=".length + encodeURIComponent(prompt).length;
 }
 
+// サロゲートペア（絵文字など）を割らないように切り詰める
+function truncateAtCodePoint(text, max) {
+  if (text.length <= max) return text;
+  let cut = max;
+  const code = text.charCodeAt(cut - 1);
+  if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  return text.slice(0, cut);
+}
+
+const ELLIPSIS = "\n（以下略）";
+
 function fitPrompt(data, tpl) {
   let prompt = buildPrompt(data, tpl);
   if (encodedLength(prompt) <= MAX_URL_LENGTH) {
     return { prompt, note: "" };
   }
 
-  const withoutReplies = { ...data, replies: [] };
-  prompt = buildPrompt(withoutReplies, tpl);
+  let current = { ...data, replies: [] };
+  let note = "長いため、表示中のリプライを省略しました。";
+  prompt = buildPrompt(current, tpl);
   if (encodedLength(prompt) <= MAX_URL_LENGTH) {
-    return { prompt, note: "長いため、表示中のリプライを省略しました。" };
+    return { prompt, note };
   }
 
-  let body = withoutReplies.text || "";
-  while (body.length > 100 && encodedLength(buildPrompt({ ...withoutReplies, text: body }, tpl)) > MAX_URL_LENGTH) {
-    body = body.slice(0, Math.floor(body.length * 0.85));
+  if (current.quoted) {
+    current = { ...current, quoted: "" };
+    note = "長いため、リプライと引用ポストを省略しました。";
+    prompt = buildPrompt(current, tpl);
+    if (encodedLength(prompt) <= MAX_URL_LENGTH) {
+      return { prompt, note };
+    }
   }
-  prompt = buildPrompt({ ...withoutReplies, text: `${body}\n（以下略）` }, tpl);
+
+  // 「（以下略）」を含めた最終形で上限を測る
+  let body = current.text || "";
+  while (body.length > 100) {
+    const candidate = buildPrompt({ ...current, text: `${body}${ELLIPSIS}` }, tpl);
+    if (encodedLength(candidate) <= MAX_URL_LENGTH) break;
+    body = truncateAtCodePoint(body, Math.floor(body.length * 0.85));
+  }
+  prompt = buildPrompt({ ...current, text: `${body}${ELLIPSIS}` }, tpl);
+  if (encodedLength(prompt) > MAX_URL_LENGTH) {
+    return { prompt, note: "テンプレートが長すぎて上限に収まりません。プロンプトを短くしてください。" };
+  }
   return { prompt, note: "長いため、本文を省略しました。" };
 }
 
